@@ -1,0 +1,50 @@
+---
+title: "READI-TF workshop pandemic projections"
+author: 
+  - "Imperial College London"
+  - "14th May, 2026"
+format: revealjs
+editor_options: 
+  chunk_output_type: console
+---
+
+# Introduction
+
+## Setting the scene
+
+- You are based in South-East Asia
+- Your recommendations shape regional pandemic response
+- An outbreak has occurred, and you must respond
+- Your analysts have delivered this set of projections to aid your decisions
+
+# Outbreak projections
+
+Projected outcomes if you do nothing...
+
+## Projection: Daily new detected cases
+
+![](figures/plot_unmit_daily_cases.png)
+
+## Projection: Daily new hospital demand (admissions)
+
+![](figures/plot_unmit_daily_hospitalisations.png)
+
+## Projection: Total hospital demand (occupancy)
+
+![](figures/plot_unmit_total_hosp.png)
+
+## Projection: Daily deaths
+
+![](figures/plot_unmit_daily_deaths.png)
+
+## Projection: Total cases and deaths (60 days)
+
+![](figures/plot_unmit_epi_summary.png)
+
+## Projection: Deaths by age group (60 days)
+
+![](figures/plot_unmit_deaths_by_age.png)
+
+## Projection: Economic losses (60 days)
+
+![](figures/plot_unmit_gva_loss.png)

@@ -77,36 +77,22 @@ r0_phase_2 <- quantile(r0_samples, 0.83)
 
 ```{r echo=FALSE, include=FALSE}
 # draw mortality profile so working and school age worst affected
-severity_profile <- c(0.2, 1.5, 2, 1.5)
+severity_profile <- c(0.2, 1.5, 2, 0.2)
 
-# varying mort risk
-eta <- get_data(disease_x, "eta")
-
-# check hosp profile
-eta / mean(eta)
-
-# draw eta samples
-eta_samples <- withr::with_seed(
-  1, rbeta(100, 2, 5)
-) * mean(eta) + mean(eta) / 2
-
-
-# reduce HFR for older groups
+# apply severity profile
 hfr <- get_data(disease_x, "hfr")
-hfr[4] <- mean(hfr)
-hfr[3] <- hfr[3] * 0.8
+hfr <- mean(hfr) * severity_profile * 10
 ```
 
 ```{r echo=FALSE, include=FALSE}
 # make list of infection objects
 disease_list <- Map(
-  r0_samples, eta_samples,
+  r0_samples,
   f = function(x, y) {
     daedalus_infection(
       "influenza_2009",
       r0 = x,
-      eta = y * severity_profile,
-      hfr = hfr * severity_profile
+      hfr = hfr
     )
   }
 )
@@ -166,6 +152,10 @@ data_epi_curve <- mutate(
   data_epi_curve,
   response = forcats::fct_relevel(response, response_levels)
 )
+
+death_reporting <- 0.9
+case_reporting <- 0.33
+hosp_reporting <- 0.9
 
 # get reported values
 data_epi_curve <- mutate(
@@ -736,7 +726,7 @@ plot_unmit_gva_loss <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£", suffix = " B"
+      prefix = "$", suffix = " M"
     )
   ) +
   scale_colour_viridis_d(
@@ -747,7 +737,7 @@ plot_unmit_gva_loss <-
   ) +
   labs(
     x = NULL,
-    y = "Cumulative value lost (billion £)",
+    y = "Cumulative value lost (billion $)",
     col = "Proj. interv.",
     caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
@@ -1030,13 +1020,9 @@ data_epi_curve %>%
     measure == "total_hosp"
   ) %>%
   group_by(response, tag) %>%
-  filter(
-    value == max(reported_value),
-    value > hcap_vtnm
-  ) %>%
   group_by(response) %>%
-  count(
-    name = "hcap_vtnm_exceeded_pct"
+  summarise(
+    hcap_vtnm_exceeded_pct = sum(max(value) > hcap_vtnm)
   ) %>%
   readr::write_csv(
     "tables/table_hcap_vtnm_breaches.csv"
@@ -1236,7 +1222,7 @@ plot_compare_gva_loss <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£",
+      scale = 1e-3, prefix = "$",
       suffix = " B", accuracy = 1
     )
   ) +
@@ -1248,7 +1234,7 @@ plot_compare_gva_loss <-
   ) +
   labs(
     x = "Domain",
-    y = "Cumulative value lost (billion £)",
+    y = "Cumulative value lost (billion $)",
     col = "Proj. interv.",
     caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
@@ -1295,7 +1281,7 @@ plot_compare_gva_loss <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£",
+      scale = 1e-3, prefix = "$",
       suffix = " B", accuracy = 1
     )
   ) +
@@ -1307,7 +1293,7 @@ plot_compare_gva_loss <-
   ) +
   labs(
     x = "Domain",
-    y = "Cumulative value lost (billion £)",
+    y = "Cumulative value lost (billion $)",
     col = "Proj. interv.",
     caption = "Valuation of losses from reduced GVA, reduced education, and deaths."
   ) +
@@ -1330,8 +1316,6 @@ ggsave(
 
 ```{r}
 data_cost_output %>%
-  # scale to GBP
-  mutate(cost = cost * 0.7) %>% 
   group_by(response, domain) %>%
   reframe(fn_qtl(cost)) %>%
   mutate(
@@ -1369,8 +1353,8 @@ plot_compare_econ_cost_absences <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£",
-      suffix = " B", accuracy = 1
+      scale = 1, prefix = "$",
+      suffix = " M"
     )
   ) +
   scale_x_discrete(
@@ -1385,7 +1369,7 @@ plot_compare_econ_cost_absences <-
   ) +
   labs(
     x = NULL,
-    y = "Cumulative value lost (billion £)",
+    y = "Cumulative value lost (billion $)",
     col = "Proj. interv.",
     caption = "Economic losses from worker absences due to illness or death."
   ) +
@@ -1419,7 +1403,7 @@ plot_compare_econ_cost_closures <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      scale = 0.7e-3, prefix = "£",
+      scale = 1e-3, prefix = "$",
       suffix = " B", accuracy = 1
     )
   ) +
@@ -1428,7 +1412,7 @@ plot_compare_econ_cost_closures <-
   ) +
   labs(
     x = NULL,
-    y = "Cumulative value lost (billion £)",
+    y = "Cumulative value lost (billion $)",
     col = "Proj. interv.",
     caption = "Economic losses from economic sector closures."
   ) +
@@ -1446,8 +1430,6 @@ ggsave(
 
 ```{r}
 data_econ_costs %>%
-  # scale to GBP
-  mutate(cost = cost * 0.7) %>% 
   group_by(response, cost_type) %>%
   reframe(fn_qtl(cost)) %>%
   mutate(
