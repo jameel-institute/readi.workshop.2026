@@ -111,6 +111,73 @@ disease_list <- Map(
 disease_tags <- glue::glue("sample_{seq_along(disease_list)}")
 ```
 
+### Plot epi parameters
+
+```{r r0_dist_plot}
+p_r0 <- ggplot() +
+  stat_histinterval(
+    aes(
+      r0_samples,
+      fill = after_stat(
+        level
+      )
+    ),
+    limits = c(0.5, 1.0)
+  ) +
+    scale_fill_viridis_d(na.translate = FALSE) +
+    fn_theme() +
+    theme(
+      axis.text = element_text(size = 18),
+      axis.title = element_text(size = 18)
+    ) +
+    labs(
+      x = "R0",
+      y = "Density",
+      fill = "Confidence interval"
+    )
+
+ggsave(
+  "figures/plot_r0_dist.png",
+  p_r0,
+  height = 7, width = 10
+)
+```
+
+```{r r0_dist_plot}
+# get mean eta, not per age group
+eta_means <- vapply(disease_list, function(x) mean(x$eta), FUN.VALUE = numeric(1))
+p_eta <- ggplot() +
+  stat_histinterval(
+    aes(
+      eta_samples,
+      fill = after_stat(
+        level
+      )
+    ),
+    limits = c(0.5, 1.0)
+  ) +
+    scale_x_continuous(
+      labels = scales::percent
+    ) +
+    scale_fill_viridis_d(na.translate = FALSE) +
+    fn_theme() +
+    theme(
+      axis.text = element_text(size = 18),
+      axis.title = element_text(size = 18)
+    ) +
+    labs(
+      x = "Hospital admission %",
+      y = "Density",
+      fill = "Confidence interval"
+    )
+
+ggsave(
+  "figures/plot_eta_dist.png",
+  p_eta,
+  height = 7, width = 10
+)
+```
+
 ### Response options
 
 ```{r}
