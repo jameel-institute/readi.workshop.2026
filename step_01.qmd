@@ -77,21 +77,33 @@ r0_phase_2 <- quantile(r0_samples, 0.83)
 
 ```{r echo=FALSE, include=FALSE}
 # draw mortality profile so working and school age worst affected
-severity_profile <- c(0.2, 1.5, 2, 0.2)
+severity_profile <- c(0.5, 1.5, 2, 0.5)
+
+# varying mort risk
+eta <- get_data(disease_x, "eta")
+
+# check hosp profile
+eta / mean(eta)
+
+# draw eta samples
+eta_samples <- withr::with_seed(
+  1, rbeta(100, 2, 5)
+) * mean(eta) + mean(eta) / 2
 
 # apply severity profile
 hfr <- get_data(disease_x, "hfr")
-hfr <- mean(hfr) * severity_profile * 10
+hfr <- mean(hfr) * severity_profile
 ```
 
 ```{r echo=FALSE, include=FALSE}
 # make list of infection objects
 disease_list <- Map(
-  r0_samples,
+  r0_samples, eta_samples,
   f = function(x, y) {
     daedalus_infection(
       "influenza_2009",
       r0 = x,
+      eta = y * severity_profile,
       hfr = hfr
     )
   }
@@ -107,17 +119,15 @@ response_levels <- rev(names(daedalus.data::closure_strategy_data))
 
 ```{r}
 day_now <- 30
-horizon <- 60
+horizon <- 100 # works better for Vietnam
 ```
 
 ### Run Phase 1 scenarios
 
 ```{r echo=FALSE, include=FALSE}
-vtnm <- daedalus_country("Vietnam")
-sgpr <- daedalus_country("Singapore")
+country <- daedalus_country("Vietnam")
 
-hcap_vtnm <- get_data(vtnm, "hospital_capacity")
-hcap_sgpr <- get_data(sgpr, "hospital_capacity")
+hcap <- get_data(country, "hospital_capacity")
 
 # responses as time NPIs
 responses <- Map(
@@ -127,19 +137,19 @@ responses <- Map(
     daedalus_timed_npi(
       day_now + 1, horizon,
       list(v),
-      vtnm
+      country
     )
   }
 )
 
 # prepare outcomes for two scenarios
-output_vtnm <- run_scenarios(
-  vtnm,
+output <- run_scenarios(
+  country,
   disease_list,
   response = responses,
   time_end = horizon,
   initial_state_manual = list(
-    p_infectious = 1 / sum(vtnm$demography),
+    p_infectious = 1 / sum(country$demography),
     p_asymptomatic = 0.99
   )
 )
@@ -147,7 +157,7 @@ output_vtnm <- run_scenarios(
 
 ```{r echo=FALSE, include=FALSE}
 # get epi curve data and prepare for plotting
-data_epi_curve <- get_epicurve_data(output_vtnm, disease_tags, format = "long")
+data_epi_curve <- get_epicurve_data(output, disease_tags, format = "long")
 data_epi_curve <- mutate(
   data_epi_curve,
   response = forcats::fct_relevel(response, response_levels)
@@ -185,7 +195,7 @@ data_epi_curve_summary_unmit <- filter(
 ```
 
 ```{r echo=FALSE, include=FALSE}
-data_epi_summary <- get_summary_data(output_vtnm, disease_tags, format = "long")
+data_epi_summary <- get_summary_data(output, disease_tags, format = "long")
 data_epi_summary <- mutate(
   data_epi_summary,
   response = forcats::fct_relevel(response, response_levels)
@@ -205,7 +215,7 @@ data_epi_summary <- mutate(
 
 ```{r echo=FALSE, include=FALSE}
 data_deaths <- get_summary_data(
-  output_vtnm, disease_tags,
+  output, disease_tags,
   format = "long", measures = "deaths", groups = "age_group"
 )
 data_deaths <- mutate(
@@ -216,7 +226,7 @@ data_deaths <- mutate(
 
 # get naive cfr
 data_cfr <- get_summary_data(
-  output_vtnm, disease_tags,
+  output, disease_tags,
   format = "long", measures = c("infections", "deaths"),
   groups = "age_group"
 )
@@ -247,7 +257,7 @@ data_deaths_unmit <- filter(data_deaths, response == "none")
 ```
 
 ```{r echo=FALSE, include=FALSE}
-data_cost_output <- get_cost_data(output_vtnm, disease_tags, format = "long") %>%
+data_cost_output <- get_cost_data(output, disease_tags, format = "long") %>%
   filter(domain != "life_years")
 
 data_cost_output <- mutate(
@@ -270,7 +280,7 @@ data_cost_edu <- filter(data_cost_output, domain == "education") %>%
 ```
 
 ```{r echo=FALSE, include=FALSE}
-data_econ_costs <- get_econ_cost_data(output_vtnm)
+data_econ_costs <- get_econ_cost_data(output)
 
 data_econ_costs <- mutate(
   data_econ_costs,
@@ -331,7 +341,7 @@ plot_daily_cases_unmit_explainer <-
     y = "New detected cases",
     fill = "Proj. interv."
   ) +
-  # xlim(0, 60) +
+  xlim(0, horizon) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
@@ -377,7 +387,7 @@ plot_daily_infections_unmit <-
     y = "Daily new infections",
     fill = "Proj. interv."
   ) +
-  xlim(20, 60) +
+  xlim(20, horizon) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
@@ -427,7 +437,7 @@ plot_daily_cases_unmit <-
     caption = "Please consider that there is under-ascertainment.",
     fill = "Proj. interv."
   ) +
-  xlim(20, 60) +
+  xlim(20, horizon) +
   theme_bw(base_size = 24, base_family = "Arial") +
   fn_theme()
 
@@ -450,7 +460,7 @@ Map(
         data = data_epi_curve %>%
           filter(measure == m, response == "none"),
         aes(time, reported_value, group = tag),
-        alpha = 0.8, linewidth = 0.2
+        alpha = 0.8
       ) +
       geom_lineribbon(
         data = data_epi_curve_summary_unmit %>%
@@ -481,15 +491,22 @@ Map(
         fill = "Proj. interv.",
         caption = "Please consider that there is under-ascertainment."
       ) +
-      xlim(20, 60) +
+      xlim(20, horizon) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
     if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_unmit <- plot_epi_curves_unmit +
         geom_hline(
-          yintercept = hcap_vtnm,
+          yintercept = hcap,
           col = "red", linetype = "dashed"
+        ) +
+        annotate(
+          "text",
+          x = 50, y = hcap,
+          label = "Hosp. cap.",
+          colour = "red", hjust = "inward", vjust = "outward",
+          fontface = "bold"
         )
     }
 
@@ -557,7 +574,7 @@ plot_unmit_epi_summary <-
   ) +
   labs(
     x = NULL,
-    y = "Count (up to day 60)",
+    y = glue::glue("Count (up to day {horizon})"),
     colour = "Proj. interv.",
     caption = "Please consider that there is under-ascertainment.",
   ) +
@@ -611,7 +628,7 @@ plot_unmit_deaths_by_age <-
     }
   ) +
   labs(
-    y = "Cumulative deaths (up to day 60)",
+    y = glue::glue("Cumulative deaths (up to day {horizon})"),
     x = "Age group",
     colour = "Proj. interv.",
     caption = "Please consider that there is under-ascertainment."
@@ -726,7 +743,7 @@ plot_unmit_gva_loss <-
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
-      prefix = "$", suffix = " M"
+      prefix = "$", suffix = " B", scale = 1e-3, accuracy = 1
     )
   ) +
   scale_colour_viridis_d(
@@ -828,20 +845,20 @@ Map(
           S = school closures; B = business closures."
         )
       ) +
-      xlim(20, 60) +
+      xlim(20, horizon) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
     if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_compare <- plot_epi_curves_compare +
         geom_hline(
-          yintercept = hcap_vtnm,
+          yintercept = hcap,
           col = "red", linetype = "dashed"
         ) +
         annotate(
           "text",
           x = horizon * 2 / 3,
-          y = hcap_vtnm,
+          y = hcap,
           label = "Surge hosp. cap.",
           size = 8,
           colour = "red"
@@ -908,20 +925,20 @@ Map(
           S = school closures; B = business closures."
         )
       ) +
-      xlim(20, 60) +
+      xlim(20, horizon) +
       theme_bw(base_size = 24, base_family = "Arial") +
       fn_theme()
 
     if (m %in% c("total_hosp", "daily_hospitalisations")) {
       plot_epi_curves_compare <- plot_epi_curves_compare +
         geom_hline(
-          yintercept = hcap_vtnm,
+          yintercept = hcap,
           col = "red", linetype = "dashed"
         ) +
         annotate(
           "text",
           x = horizon * 2 / 3,
-          y = hcap_vtnm,
+          y = hcap,
           label = "Surge hosp. cap.",
           size = 8,
           colour = "red"
@@ -1022,10 +1039,10 @@ data_epi_curve %>%
   group_by(response, tag) %>%
   group_by(response) %>%
   summarise(
-    hcap_vtnm_exceeded_pct = sum(max(value) > hcap_vtnm)
+    hcap_exceeded_pct = sum(max(value) > hcap)
   ) %>%
   readr::write_csv(
-    "tables/table_hcap_vtnm_breaches.csv"
+    "tables/table_hcap_breaches.csv"
   )
 ```
 
@@ -1354,7 +1371,7 @@ plot_compare_econ_cost_absences <-
   scale_y_continuous(
     labels = scales::label_currency(
       scale = 1, prefix = "$",
-      suffix = " M"
+      suffix = " B"
     )
   ) +
   scale_x_discrete(
