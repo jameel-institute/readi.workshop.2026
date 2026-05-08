@@ -125,6 +125,7 @@ p_r0 <- ggplot() +
     limits = c(0.5, 1.0)
   ) +
     scale_fill_viridis_d(na.translate = FALSE) +
+    theme_bw() +
     fn_theme() +
     theme(
       axis.text = element_text(size = 18),
@@ -160,6 +161,7 @@ p_eta <- ggplot() +
       labels = scales::percent
     ) +
     scale_fill_viridis_d(na.translate = FALSE) +
+    theme_bw() +
     fn_theme() +
     theme(
       axis.text = element_text(size = 18),
