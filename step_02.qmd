@@ -51,6 +51,7 @@ r0_samples <- withr::with_seed(
   1, rnorm(100)
 )
 
+# step 1 scaling was between 1 and 2
 r0_samples <- scales::rescale(r0_samples, c(1.52, 1.6))
 r0_samples <- sort(r0_samples)
 ```
@@ -68,7 +69,8 @@ r0_summary <- round(r0_summary, 3)
 
 ```{r echo=FALSE, include=FALSE}
 # draw mortality profile so working and school age worst affected
-severity_profile <- c(0.2, 1.5, 2, 1.5)
+# draw mortality profile so working and school age worst affected
+severity_profile <- c(0.5, 1.5, 2, 0.5)
 
 # varying mort risk
 eta <- get_data(disease_x, "eta")
@@ -79,17 +81,11 @@ eta / mean(eta)
 # draw eta samples
 eta_samples <- withr::with_seed(
   1, rbeta(100, 2, 5)
-) * mean(eta) + mean(eta) / 2
+) * median(eta) + median(eta) / 2
 
-
-# get mean mortality|hosp and scale as well
-omega <- get_data(disease_x, "omega")
-omega <- mean(omega) * 1.5
-
-# bump up 65+ recovery
-gamma_H <- get_data(disease_x, "gamma_H")
-gamma_H[4] <- mean(gamma_H)
-gamma_H[3] <- gamma_H[3] * 0.8
+# apply severity profile
+hfr <- get_data(disease_x, "hfr")
+hfr <- mean(hfr) * severity_profile
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -101,8 +97,7 @@ disease_list <- Map(
       "influenza_2009",
       r0 = x,
       eta = y * severity_profile,
-      omega = omega * severity_profile,
-      gamma_H = gamma_H
+      hfr = hfr
     )
   }
 )
@@ -113,40 +108,68 @@ disease_tags <- glue::glue("sample_{seq_along(disease_list)}")
 # choose response
 # simulate business and school closures but with schools open
 # NOTE: THIS IS AN EXAMPLE, MODIFY THIS CODE TO RUN RESULTS
-response <- daedalus.data::closure_data$elimination
+openness_coef <- daedalus.data::closure_strategy_data$elimination
 i_EDUCATION_SECTOR <- 41L
-response[i_EDUCATION_SECTOR] <- 1.0
+openness_coef[i_EDUCATION_SECTOR] <- 1.0
+```
+
+```{r}
+country <- daedalus_country("Vietnam")
+hcap <- get_data(country, "hospital_capacity")
 ```
 
 ```{r}
 # NOTE: TIME HORIZON
-horizon <- 120L
+horizon <- 200L
+
 # NOTE: RESPONSE START AND END TIMES
 response_start <- 45 # this can change based on participants' choice
-response_duration <- 60 # this should be fixed for Step 3
+response_duration <- 90 # this should be fixed for Step 3
+
+# first do a null response
+response_none <- daedalus_timed_npi(
+ response_start, response_start + response_duration,
+ list(rep(1.0, 45L)), country 
+)
+
+# make response option
+response_main <- daedalus_timed_npi(
+  response_start, response_start + response_duration,
+  list(openness_coef),
+  country
+)
+```
+
+```{r alt_response}
+# THIS IS AN ALTERNATIVE CLOSURE/RESPONSE SCENARIO WHICH WILL HAVE TO BE
+# UPDATED ON THE FLY
+response_alt <- daedalus_timed_npi(
+  45, 75,
+  list(daedalus.data::closure_strategy_data[["economic_closures"]]),
+  country
+)
 ```
 
 ```{r echo=FALSE, include=FALSE}
-gbr <- daedalus_country("GBR")
-hosp_capacity <- gbr$hospital_capacity
-
 # prepare outcomes for two scenarios
 output <- run_scenarios(
-  "GBR",
+  country,
   disease_list,
-  response_strategy = list("none", response),
-  response_time = response_start,
-  response_duration = response_duration,
+  response_strategy = list(
+    none = response_none,
+    main = response_main,
+    alt = response_alt
+  ),
   time_end = horizon
 )
 ```
 
 ```{r}
-case_reporting <- 0.1 # 10% infections reported as cases
-hosp_reporting <- 1.0 # 100% hosps assumed/reported to be epidemic
-death_reporting <- 0.95 # 95% deaths reported as epidemic deaths
+death_reporting <- 0.9
+case_reporting <- 0.33
+hosp_reporting <- 0.9
 
-response_levels <- rev(names(daedalus.data::closure_data))
+response_levels <- c("none", "main", "alt")
 ```
 
 ```{r echo=FALSE, include=FALSE}
@@ -163,7 +186,10 @@ data_epi_curve <- mutate(
     measure == "daily_hospitalisations" ~ hosp_reporting,
     measure == "total_hosp" ~ hosp_reporting
   ),
-  reported_value = value * reporting_rate
+  reported_value = value * reporting_rate,
+  response = forcats::as_factor(
+    response
+  )
 )
 
 data_epi_curve_summary <- group_by(
@@ -187,7 +213,10 @@ data_epi_summary <- mutate(
     measure == "epidemic_size" ~ case_reporting,
     measure == "total_hospitalisations" ~ hosp_reporting
   ),
-  reported_value = value * reporting_rate
+  reported_value = value * reporting_rate,
+  response = forcats::as_factor(
+    response
+  )
 )
 ```
 
@@ -199,32 +228,50 @@ data_deaths <- get_summary_data(
 
 data_deaths <- mutate(
   data_deaths,
-  reported_value = value * death_reporting
+  reported_value = value * death_reporting,
+  response = forcats::as_factor(
+    response
+  )
 )
 ```
 
 ```{r}
 # get losses data
 data_cost_output <- get_cost_data(output, disease_tags, format = "long") %>%
-  filter(domain != "life_years")
+  filter(domain != "life_years") %>%
+  mutate(
+    response = forcats::as_factor(
+      response
+    )
+  )
 
 # separate economic losses into closures and absences
 data_econ_costs <- get_econ_cost_data(output)
 data_econ_cost_closures <- filter(
   data_econ_costs, cost_type == "economic_cost_closures"
 ) %>%
+  mutate(
+    response = forcats::as_factor(
+      response
+    )
+  ) %>%
   group_by(response) %>%
   summarise(cost = median(cost))
 
 data_econ_cost_absences <- filter(
   data_econ_costs, cost_type == "economic_cost_absences"
-)
+) %>%
+  mutate(
+    response = forcats::as_factor(
+      response
+    )
+  )
 ```
 
 ```{r}
 # set current day
-day_zero <- 20
-day_now <- 120
+day_zero <- 30
+day_now <- 200
 ```
 
 ```{r}
@@ -241,7 +288,11 @@ curve_measure_labels <- c(
   daily_deaths = "New deaths"
 )
 
-response_labels <- c(none = "Unmitigated", custom_response_1 = "Chosen response")
+response_labels <- c(
+  none = "Unmitigated",
+  main = "Chosen response",
+  alt = "Alternative response"
+)
 
 plots_epi_curves <- Map(
   measures, curve_measure_labels,
@@ -301,7 +352,7 @@ plots_epi_curves <- Map(
     if (m == "total_hosp") {
       plot_epi_curves <- plot_epi_curves +
         geom_hline(
-          yintercept = hosp_capacity,
+          yintercept = hcap,
           col = "red", linetype = "dashed"
         )
     }
@@ -311,7 +362,7 @@ plots_epi_curves <- Map(
 )
 ```
 
-# Days 30 -- 120
+# Days 30 -- 200
 
 ## Detected cases {.smaller}
 
@@ -460,7 +511,9 @@ ggplot(data_deaths) +
 
 ```{r echo=FALSE}
 loss_measure_labels <- c(
-  "GVA", "Future earnings", "Life years"
+  economic = "GVA", 
+  education = "Future earnings",
+  life_value = "Life years"
 )
 ```
 
@@ -468,7 +521,7 @@ loss_measure_labels <- c(
 ggplot(data_cost_output) +
   stat_interval(
     aes(
-      x = domain, y = cost,
+      x = response, y = cost,
       color = after_stat(
         level
       )
@@ -478,20 +531,21 @@ ggplot(data_cost_output) +
     normalize = "groups"
   ) +
   stat_pointinterval(
-    aes(domain, cost),
+    aes(response, cost),
     .width = c(0.5, 0.95),
   ) +
-  facet_grid(
-    cols = vars(response),
+  facet_wrap(
+    facets = vars(domain),
     # rows = vars(measure),
     labeller = labeller(
-      measure = summary_measure_labels,
-      response = response_labels
+      # measure = summary_measure_labels,
+      domain = loss_measure_labels
     ),
     scales = "free"
   ) +
   scale_x_discrete(
-    labels = loss_measure_labels
+    labels = response_labels,
+    guide = guide_axis(n.dodge = 2)
   ) +
   scale_y_continuous(
     labels = scales::label_currency(
