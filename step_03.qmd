@@ -140,6 +140,16 @@ response_main <- daedalus_timed_npi(
 )
 ```
 
+```{r alt_response}
+# THIS IS AN ALTERNATIVE CLOSURE/RESPONSE SCENARIO WHICH WILL HAVE TO BE
+# UPDATED ON THE FLY
+response_alt <- daedalus_timed_npi(
+  45, 75,
+  list(daedalus.data::closure_strategy_data[["economic_closures"]]),
+  country
+)
+```
+
 ```{r echo=FALSE, include=FALSE}
 # prepare outcomes for two scenarios
 output <- run_scenarios(
@@ -147,7 +157,8 @@ output <- run_scenarios(
   disease_list,
   response_strategy = list(
     none = response_none,
-    main = response_main
+    main = response_main,
+    alt = response_alt
   ),
   time_end = horizon
 )
